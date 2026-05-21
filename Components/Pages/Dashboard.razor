@@ -1,0 +1,90 @@
+@page "/"
+@attribute [Authorize]
+@inject NavigationManager NavManager
+@inject AuthenticationStateProvider AuthStateProvider
+@using LibraryManagementSystem.Features.Helpers.Auth
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+
+
+<PageTitle>Dashboard</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <AuthorizeView>
+        <Authorized>
+            <MudText Typo="Typo.h3" Align="Align.Center" GutterBottom="true">Welcome, @context.User.Identity?.Name!</MudText>
+            
+            <AuthorizeView Roles="Admin" Context="adminContext">
+                <Authorized>
+                    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-8">Admin Dashboard</MudText>
+                    <MudGrid>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.Book" Size="Size.Large" Color="Color.Primary" />
+                                <MudText Typo="Typo.h6" Class="mt-2">Manage Books</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/books" Class="mt-4">Go to Books</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.People" Size="Size.Large" Color="Color.Secondary" />
+                                <MudText Typo="Typo.h6" Class="mt-2">Manage Authors</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Secondary" Href="/admin/authors" Class="mt-4">Go to Authors</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.BackHand" Size="Size.Large" Color="Color.Info" />
+                                <MudText Typo="Typo.h6" Class="mt-2">Manage Borrows</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/borrows" Class="mt-4">Go to Borrows</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="3">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.Group" Size="Size.Large" Color="Color.Warning" />
+                                <MudText Typo="Typo.h6" Class="mt-2">Manage Users</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Warning" Href="/admin/users" Class="mt-4">Go to Users</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </Authorized>
+            </AuthorizeView>
+
+            <AuthorizeView Roles="Member" Context="memberContext">
+                <Authorized>
+                    <MudText Typo="Typo.h5" Align="Align.Center" Class="mb-8">Member Dashboard</MudText>
+                    <MudGrid Justify="Justify.Center">
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.Search" Size="Size.Large" Color="Color.Primary" />
+                                <MudText Typo="Typo.h6" Class="mt-2">Browse & Borrow</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Primary" Href="/browse-books" Class="mt-4">Browse Books</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                        <MudItem xs="12" sm="6" md="4">
+                            <MudPaper Elevation="2" Class="pa-4 d-flex flex-column align-center">
+                                <MudIcon Icon="@Icons.Material.Filled.LibraryBooks" Size="Size.Large" Color="Color.Info" />
+                                <MudText Typo="Typo.h6" Class="mt-2">My Borrowed Books</MudText>
+                                <MudButton Variant="Variant.Outlined" Color="Color.Info" Href="/my-borrows" Class="mt-4">View My Borrows</MudButton>
+                            </MudPaper>
+                        </MudItem>
+                    </MudGrid>
+                </Authorized>
+            </AuthorizeView>
+        </Authorized>
+    </AuthorizeView>
+</MudContainer>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var user = authState.User;
+
+        if (user.Identity == null || !user.Identity.IsAuthenticated)
+        {
+            NavManager.NavigateTo("/login");
+        }
+    }
+}
+

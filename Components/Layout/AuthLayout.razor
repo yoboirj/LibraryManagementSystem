@@ -1,0 +1,60 @@
+@inherits LayoutComponentBase
+@using LibraryManagementSystem.Features.Helpers
+@inject ThemePalos ThemePalos
+@inject IJSRuntime JSRuntime
+
+<MudThemeProvider @bind-IsDarkMode="@ThemePalos.IsDarkMode" Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<div class="d-flex flex-column" style="height: 100vh;">
+    <div class="d-flex justify-end pa-4">
+        <MudToggleIconButton Toggled="@ThemePalos.IsDarkMode" ToggledChanged="OnDarkModeToggled"
+                             Icon="@Icons.Material.Filled.Brightness4" Color="@Color.Inherit" Title="Dark Mode"
+                             ToggledIcon="@Icons.Material.Filled.Brightness7" ToggledColor="@Color.Inherit" ToggledTitle="Light Mode" />
+    </div>
+    <MudContainer MaxWidth="MaxWidth.Medium" Class="d-flex align-center justify-center flex-grow-1 px-4">
+        @Body
+    </MudContainer>
+</div>
+
+@code {
+    MudTheme _theme = new();
+
+    protected override void OnInitialized()
+    {
+        ThemePalos.OnThemeChanged += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var isDark = await JSRuntime.InvokeAsync<string>("themeHelper.getCookie", "isDarkMode");
+                if (bool.TryParse(isDark, out bool result))
+                {
+                    ThemePalos.IsDarkMode = result;
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reading theme cookie: {ex.Message}");
+            }
+        }
+    }
+
+    async Task OnDarkModeToggled(bool toggled)
+    {
+        ThemePalos.IsDarkMode = toggled;
+        await JSRuntime.InvokeVoidAsync("themeHelper.setCookie", "isDarkMode", toggled.ToString().ToLower(), 365);
+    }
+
+    public void Dispose()
+    {
+        ThemePalos.OnThemeChanged -= StateHasChanged;
+    }
+}

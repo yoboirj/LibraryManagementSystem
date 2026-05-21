@@ -1,0 +1,77 @@
+@page "/books/add"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Implementations
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IBookServices BookServices
+@inject IAuthorServices AuthorServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="4" Class="pa-8">
+        <div class="d-flex align-center mb-6">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Default" OnClick="Cancel" Class="mr-2" />
+            <MudText Typo="Typo.h4">Add New Book</MudText>
+        </div>
+
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudTextField T="string" Label="Title" Required="true" RequiredError="Title is required!"
+                          Placeholder="Enter book title"
+                          @bind-Value="newBook.Title" Class="mb-4" />
+
+            <MudSelect T="int?" Label="Author" Required="true" @bind-Value="selectedAuthorId" 
+                       Placeholder="Select an author"
+                       Class="mb-4">
+                @foreach (var author in authors)
+                {
+                    <MudSelectItem Value="@((int?)author.Id)">@author.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField T="int?" Label="Quantity" Required="true" Min="1"
+                             Placeholder="Enter quantity"
+                             @bind-Value="bookQuantity" Class="mb-4" />
+
+            <div class="d-flex justify-end mt-6">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="Cancel" Class="mr-2">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="HandleAddBook" Disabled="@(!success)">Save Book</MudButton>
+            </div>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    bool success;
+    MudForm form = default!;
+    Book newBook = new();
+    List<Author> authors = new();
+    int? selectedAuthorId;
+    int? bookQuantity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        authors = await AuthorServices.GetAuthorsAsync();
+    }
+
+    private async Task HandleAddBook()
+    {
+        await form.ValidateAsync();
+
+        if (form.IsValid)
+        {
+            newBook.AuthorId = selectedAuthorId;
+            newBook.Quantity = bookQuantity ?? 0;
+            await BookServices.CreateBookAsync(newBook);
+            Snackbar.Add("Book added successfully!", Severity.Success);
+            NavManager.NavigateTo("/books");
+        }
+    }
+
+    private void Cancel()
+    {
+        NavManager.NavigateTo("/books");
+    }
+}

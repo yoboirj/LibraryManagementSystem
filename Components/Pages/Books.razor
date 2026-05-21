@@ -1,0 +1,156 @@
+@page "/books"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IBookServices BookServices
+@inject IAuthorServices AuthorServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <div class="d-flex align-center justify-space-between mb-8">
+        <MudText Typo="Typo.h4">Manage Books</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => NavManager.NavigateTo("/books/add"))">Add Book</MudButton>
+    </div>
+
+    <MudTable Items="@books" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Filter="new Func<Book, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Books List</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Placeholder="Search Title or Author" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Title</MudTh>
+            <MudTh>Author</MudTh>
+            <MudTh>Quantity</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Title">@context.Title</MudTd>
+            <MudTd DataLabel="Author">@context.Author?.Name</MudTd>
+            <MudTd DataLabel="Quantity">@context.Quantity</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" OnClick="@(() => EditBook(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteBook(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isEditDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Book</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" @bind-IsValid="@isEditFormValid">
+            <MudTextField T="string" Label="Title" Required="true" RequiredError="Title is required!"
+                          Placeholder="Enter book title"
+                          @bind-Value="editingBook.Title" />
+            
+            <MudSelect T="int?" Label="Author" Required="true" @bind-Value="editingAuthorId" 
+                       Placeholder="Select an author"
+                       Class="mt-4">
+                @foreach (var author in authors)
+                {
+                    <MudSelectItem Value="@((int?)author.Id)">@author.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField T="int?" Label="Quantity" Required="true" Min="0"
+                             Placeholder="Enter quantity"
+                             @bind-Value="editingQuantity" Class="mt-4" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UpdateBook" Disabled="@(!isEditFormValid)">Update</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    List<Book> books = new();
+    List<Author> authors = new();
+    string searchString = "";
+
+    // Edit logic
+    bool isEditDialogVisible;
+    bool isEditFormValid;
+    MudForm editForm = default!;
+    Book editingBook = new();
+    int? editingAuthorId;
+    int? editingQuantity;
+    DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        books = await BookServices.GetBooksWithAuthorsAsync();
+        authors = await AuthorServices.GetAuthorsAsync();
+    }
+
+    private bool FilterFunc(Book book)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (book.Title.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (book.Author?.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase) ?? false)
+            return true;
+        return false;
+    }
+
+    private void EditBook(Book book)
+    {
+        editingBook = new Book
+        {
+            Id = book.Id,
+            Title = book.Title,
+            AuthorId = book.AuthorId,
+            Quantity = book.Quantity,
+            ISBN = book.ISBN,
+            Genre = book.Genre,
+            Description = book.Description,
+            PublicationYear = book.PublicationYear,
+            CreatedAt = book.CreatedAt
+        };
+        editingAuthorId = book.AuthorId;
+        editingQuantity = book.Quantity;
+        isEditDialogVisible = true;
+    }
+
+    private void CancelEdit()
+    {
+        isEditDialogVisible = false;
+    }
+
+    private async Task UpdateBook()
+    {
+        await editForm.ValidateAsync();
+        if (editForm.IsValid)
+        {
+            editingBook.AuthorId = editingAuthorId;
+            editingBook.Quantity = editingQuantity ?? 0;
+            await BookServices.UpdateBookAsync(editingBook);
+            Snackbar.Add("Book updated successfully!", Severity.Success);
+            isEditDialogVisible = false;
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteBook(int id)
+    {
+        await BookServices.DeleteBookAsync(id);
+        Snackbar.Add("Book deleted successfully!", Severity.Success);
+        await LoadData();
+    }
+}

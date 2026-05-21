@@ -1,0 +1,20 @@
+@using Microsoft.AspNetCore.Components.Authorization
+<MudPaper Width="250px" Class="py-3 pt-0" Elevation="0">
+    <MudNavLink Href="/" Icon="@Icons.Material.Filled.Dashboard">Dashboard</MudNavLink>
+        <MudNavMenu Dense="true" Rounded="true" Margin="Margin.Dense" Color="Color.Secondary" Class="pa-2">
+        <AuthorizeView Roles="Admin">
+            <Authorized>
+                <MudNavLink Href="/books" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Book">Books</MudNavLink>
+                <MudNavLink Href="/borrows" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.BackHand">Borrows</MudNavLink>
+                <MudNavLink Href="/admin/users" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Group">Users</MudNavLink>
+                <MudNavLink Href="/admin/authors" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.People">Manage Authors</MudNavLink>
+            </Authorized>
+        </AuthorizeView>
+             <AuthorizeView Roles="Member">
+                <Authorized>
+                    <MudNavLink Href="/browse-books" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.Search">Browse Books</MudNavLink>
+                    <MudNavLink Href="/my-borrows" Match="NavLinkMatch.Prefix" Icon="@Icons.Material.Filled.LibraryBooks">My Borrows</MudNavLink>
+                </Authorized>
+             </AuthorizeView>
+        </MudNavMenu>
+</MudPaper>

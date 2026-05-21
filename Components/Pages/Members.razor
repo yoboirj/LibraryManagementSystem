@@ -1,0 +1,119 @@
+@page "/members"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IMemberServices MemberServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <div class="d-flex align-center justify-space-between mb-8">
+        <MudText Typo="Typo.h4">Manage Members</MudText>
+    </div>
+
+    <MudTable Items="@members" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Filter="new Func<Member, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Members List</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Placeholder="Search Name or Course" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Name</MudTh>
+            <MudTh>Course</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Name">@context.Name</MudTd>
+            <MudTd DataLabel="Course">@context.Course</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" OnClick="@(() => EditMember(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteMember(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isEditDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Member</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" @bind-IsValid="@isEditFormValid">
+            <MudTextField T="string" Label="Name" Required="true" @bind-Value="editingMember.Name" />
+            <MudTextField T="string" Label="Course" Required="true" @bind-Value="editingMember.Course" Class="mt-4" />
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UpdateMember" Disabled="@(!isEditFormValid)">Update</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    List<Member> members = new();
+    string searchString = "";
+
+    // Edit logic
+    bool isEditDialogVisible;
+    bool isEditFormValid;
+    MudForm editForm = default!;
+    Member editingMember = new();
+    DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadMembers();
+    }
+
+    private async Task LoadMembers()
+    {
+        members = await MemberServices.GetAllMembersAsync();
+    }
+
+    private bool FilterFunc(Member member)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (member.Name.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (member.Course.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private void EditMember(Member member)
+    {
+        editingMember = new Member
+        {
+            Id = member.Id,
+            Name = member.Name,
+            Course = member.Course
+        };
+        isEditDialogVisible = true;
+    }
+
+    private void CancelEdit()
+    {
+        isEditDialogVisible = false;
+    }
+
+    private async Task UpdateMember()
+    {
+        await MemberServices.UpdateMemberAsync(editingMember);
+        isEditDialogVisible = false;
+        Snackbar.Add("Member updated successfully", Severity.Success);
+        await LoadMembers();
+    }
+
+    private async Task DeleteMember(int id)
+    {
+        await MemberServices.DeleteMemberAsync(id);
+        Snackbar.Add("Member deleted successfully", Severity.Success);
+        await LoadMembers();
+    }
+}

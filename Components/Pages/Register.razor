@@ -1,0 +1,113 @@
+@page "/register"
+@layout LibraryManagementSystem.Components.Layout.AuthLayout
+@using LibraryManagementSystem.Features.Helpers.Auth
+@using LibraryManagementSystem.Features.Services.Intefaces
+@inject IUserServices UserServices
+@inject NavigationManager NavManager
+@inject ISnackbar Snackbar
+@inject AuthStateProvider AuthStateProvider
+
+<MudPaper Elevation="4" Class="pa-8" Style="max-width: 400px; width: 100%; margin: auto;">
+    <div class="d-flex flex-column align-center mb-6">
+        <MudIcon Icon="@Icons.Material.Filled.MenuBook" Color="Color.Primary" Style="font-size: 4rem;" />
+        <MudText Typo="Typo.h4" Align="Align.Center" Class="mt-2">Join Us</MudText>
+        <MudText Typo="Typo.subtitle1" Color="Color.Secondary">Create your library account</MudText>
+    </div>
+    <MudForm @ref="form" @bind-IsValid="@success">
+        <MudTextField T="string" Label="Username" Required="true" RequiredError="Username is required!"
+                      @bind-Value="registerModel.Username" Variant="Variant.Outlined" Margin="Margin.Dense" 
+                      ShrinkLabel="true" Immediate="true" />
+
+        <MudTextField T="string" Label="Email" Required="true" RequiredError="Email is required!"
+                      @bind-Value="registerModel.Email" InputType="InputType.Email" Class="mt-4" 
+                      Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Immediate="true" />
+
+        <MudTextField T="string" @bind-Value="registerModel.Password" Label="Password"
+                      InputType="InputType.Password" Required="true" RequiredError="Password is required!"
+                      Class="mt-4" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Immediate="true" />
+
+        <MudTextField T="string" @bind-Value="confirmPassword" Label="Confirm Password"
+                      InputType="InputType.Password" Required="true" RequiredError="Please confirm your password!"
+                      Validation="@(new Func<string, string>(PasswordMatch))"
+                      Class="mt-4" Variant="Variant.Outlined" Margin="Margin.Dense" ShrinkLabel="true" Immediate="true" />
+
+        <MudSelect T="string"
+                   Label="Role"
+                   Required="true"
+                   @bind-Value="registerModel.Role"
+                   Class="mt-4" Variant="Variant.Outlined" Margin="Margin.Dense">
+            <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+            <MudSelectItem Value="@("Member")">Member</MudSelectItem>
+        </MudSelect>
+
+        @if (registerModel.Role == "Member")
+        {
+            <MudTextField T="string" Label="Course" Required="true" RequiredError="Course is required for Members!"
+                          @bind-Value="course" Class="mt-4" Variant="Variant.Outlined" Margin="Margin.Dense" 
+                          ShrinkLabel="true" Immediate="true" />
+        }
+
+        @if (!string.IsNullOrEmpty(error))
+        {
+            <MudText Color="Color.Error" Class="mt-2" Typo="Typo.body2">@error</MudText>
+        }
+
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true"
+                   OnClick="HandleRegister" Class="mt-6 py-3" Disabled="@(!success)">Register</MudButton>
+
+        <MudText Align="Align.Center" Class="mt-4">
+            Already have an account? <MudLink Href="/login">Login</MudLink>
+        </MudText>
+    </MudForm>
+</MudPaper>
+
+@code {
+    bool success;
+    MudForm form = default!;
+    User registerModel = new User { Role = "Member" }; // Default to Member
+    string confirmPassword = string.Empty;
+    string course = string.Empty;
+    string error = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        registerModel.Role = "Member"; // Ensure default is set
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var currentUser = authState.User;
+
+        if (currentUser.Identity != null && currentUser.Identity.IsAuthenticated)
+        {
+            NavManager.NavigateTo("/");
+        }
+    }
+
+    private void OnRoleChanged(string newRole)
+    {
+        // Removed as we are using @bind-Value
+    }
+    private string PasswordMatch(string arg)
+    {
+        if (confirmPassword != registerModel.Password)
+            return "Passwords do not match";
+        return null;
+    }
+
+    private async Task HandleRegister()
+    {
+        await form.ValidateAsync();
+
+        if (form.IsValid)
+        {
+            var result = await UserServices.RegisterAsync(registerModel, registerModel.Role == "Member" ? course : null);
+            if (result)
+            {
+                Snackbar.Add("Registration successful!", Severity.Success);
+                NavManager.NavigateTo("/login");
+            }
+            else
+            {
+                error = "Username already exists.";
+            }
+        }
+    }
+}

@@ -1,0 +1,138 @@
+﻿@page "/admin/users"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IUserServices UserServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <div class="d-flex align-center justify-space-between mb-8">
+        <MudText Typo="Typo.h4">Manage Users</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => NavManager.NavigateTo("/admin/users/add"))">Add User</MudButton>
+    </div>
+
+    <MudTable Items="@users" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Filter="new Func<User, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Users List</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Placeholder="Search Username or Email" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Username</MudTh>
+            <MudTh>Email</MudTh>
+            <MudTh>Role</MudTh>
+            <MudTh>Created At</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Username">@context.Username</MudTd>
+            <MudTd DataLabel="Email">@context.Email</MudTd>
+            <MudTd DataLabel="Role">@context.Role</MudTd>
+            <MudTd DataLabel="Created At">@context.CreatedAt.ToLocalTime().ToString("g")</MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" OnClick="@(() => EditUser(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteUser(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isEditDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit User</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" @bind-IsValid="@isEditFormValid">
+            <MudTextField T="string" Label="Username" Required="true" @bind-Value="editingUser.Username" />
+            <MudTextField T="string" Label="Email" Required="true" @bind-Value="editingUser.Email" Class="mt-4" />
+            <MudSelect T="string" Label="Role" Required="true" @bind-Value="editingUser.Role" Class="mt-4">
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                <MudSelectItem Value="@("Member")">Member</MudSelectItem>
+            </MudSelect>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UpdateUser" Disabled="@(!isEditFormValid)">Update</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    List<User> users = new();
+    string searchString = "";
+
+    // Edit logic
+    bool isEditDialogVisible;
+    bool isEditFormValid;
+    MudForm editForm = default!;
+    User editingUser = new();
+    DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    private async Task LoadUsers()
+    {
+        users = await UserServices.GetAllUsersAsync();
+    }
+
+    private bool FilterFunc(User user)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+        if (user.Username.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (user.Email.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (user.Role.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private void EditUser(User user)
+    {
+        editingUser = new User
+        {
+            Id = user.Id,
+            Username = user.Username,
+            Email = user.Email,
+            Role = user.Role,
+            Password = user.Password, // Keep password same for now
+            CreatedAt = user.CreatedAt
+        };
+        isEditDialogVisible = true;
+    }
+
+    private void CancelEdit()
+    {
+        isEditDialogVisible = false;
+    }
+
+    private async Task UpdateUser()
+    {
+        await editForm.ValidateAsync();
+        if (isEditFormValid)
+        {
+            await UserServices.UpdateUserAsync(editingUser);
+            Snackbar.Add("User updated successfully!", Severity.Success);
+            isEditDialogVisible = false;
+            await LoadUsers();
+        }
+    }
+
+    private async Task DeleteUser(int id)
+    {
+        await UserServices.DeleteUserAsync(id);
+        Snackbar.Add("User deleted successfully!", Severity.Info);
+        await LoadUsers();
+    }
+}

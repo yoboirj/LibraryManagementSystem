@@ -1,0 +1,112 @@
+@inherits LayoutComponentBase
+@using LibraryManagementSystem.Features.Helpers
+@using LibraryManagementSystem.Features.Helpers.Auth
+@using Microsoft.AspNetCore.Components.Authorization
+@inject AuthStateProvider AuthStateProvider
+@inject NavigationManager NavManager
+@inject ThemePalos ThemePalos
+@inject IJSRuntime JSRuntime
+
+<MudThemeProvider @bind-IsDarkMode="@ThemePalos.IsDarkMode" Theme="_theme" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+<MudLayout>
+    <MudAppBar Elevation="1">
+        <AuthorizeView>
+            <Authorized>
+                <MudIconButton Icon="@Icons.Material.Filled.Menu" Color="Color.Inherit" Edge="Edge.Start"
+                               OnClick="@((e) => DrawerToggle())" />
+            </Authorized>
+        </AuthorizeView>
+        <MudText Typo="Typo.h6" Class="ml-3">Library Management System ni Yoboi RJ</MudText>
+        <MudSpacer />
+        <MudToggleIconButton Toggled="@ThemePalos.IsDarkMode" ToggledChanged="OnDarkModeToggled"
+                             Icon="@Icons.Material.Filled.Brightness4" Color="@Color.Inherit" Title="Dark Mode"
+                             ToggledIcon="@Icons.Material.Filled.Brightness7" ToggledColor="@Color.Inherit" ToggledTitle="Light Mode" />
+        <AuthorizeView>
+            <Authorized>
+                 <MudText Class="ml-4 mr-4">Hello, @context.User.Identity?.Name!</MudText>
+                 <MudMenu Icon="@Icons.Material.Filled.AccountCircle" Color="Color.Inherit" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight">
+                     <MudMenuItem Icon="@Icons.Material.Filled.Person" OnClick="@(() => NavManager.NavigateTo("/profile"))">Profile</MudMenuItem>
+                     <MudMenuItem Icon="@Icons.Material.Filled.Logout" OnClick="Logout">Logout</MudMenuItem>
+                 </MudMenu>
+             </Authorized>
+            <NotAuthorized>
+                <MudButton Variant="Variant.Outlined" Color="Color.Inherit" Href="/login" Class="ml-4">Login</MudButton>
+            </NotAuthorized>
+        </AuthorizeView>
+    </MudAppBar>
+    <AuthorizeView>
+        <Authorized>
+            <MudDrawer @bind-Open="_drawerOpen" Elevation="2">
+                <MudDrawerHeader>
+                    <MudStack Direction="Direction.Row" AlignItems="AlignItems.Center">
+                        <MudStack Direction="Direction.Row">
+                            <MudText Typo="Typo.h6">Library</MudText>
+                            <MudText Typo="Typo.h6">Management</MudText>
+                            <MudText Typo="Typo.body2" Class="mud-text-secondary">© Yoboi RJ</MudText>
+                        </MudStack>
+                    </MudStack>
+                </MudDrawerHeader>
+                <NavMenu />
+            </MudDrawer>
+        </Authorized>
+    </AuthorizeView>
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="mt-4">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+@code {
+    bool _drawerOpen = true;
+    MudTheme _theme = new();
+
+    protected override void OnInitialized()
+    {
+        ThemePalos.OnThemeChanged += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+                var isDark = await JSRuntime.InvokeAsync<string>("themeHelper.getCookie", "isDarkMode");
+                if (bool.TryParse(isDark, out bool result))
+                {
+                    ThemePalos.IsDarkMode = result;
+                    StateHasChanged();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error reading theme cookie: {ex.Message}");
+            }
+        }
+    }
+
+    async Task OnDarkModeToggled(bool toggled)
+    {
+        ThemePalos.IsDarkMode = toggled;
+        await JSRuntime.InvokeVoidAsync("themeHelper.setCookie", "isDarkMode", toggled.ToString().ToLower(), 365);
+    }
+
+    void DrawerToggle()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private void Logout()
+    {
+        AuthStateProvider.MarkUserAsLoggedOut();
+        NavManager.NavigateTo("/login");
+    }
+
+    public void Dispose()
+    {
+        ThemePalos.OnThemeChanged -= StateHasChanged;
+    }
+}

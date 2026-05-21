@@ -1,0 +1,104 @@
+@page "/borrows/add"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IBorrowServices BorrowServices
+@inject IBookServices BookServices
+@inject IMemberServices MemberServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="4" Class="pa-8">
+        <div class="d-flex align-center mb-6">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Default" OnClick="Cancel" Class="mr-2" />
+            <MudText Typo="Typo.h4">Borrow a Book</MudText>
+        </div>
+
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudSelect T="int?" Label="Select Book" Required="true" @bind-Value="selectedBookId" 
+                       Placeholder="Choose a book"
+                       Class="mb-4">
+                @foreach (var book in books)
+                {
+                    <MudSelectItem Value="@((int?)book.Id)">@book.Title</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="int?" Label="Select Member" Required="true" @bind-Value="selectedMemberId" 
+                       Placeholder="Choose a member"
+                       Class="mb-4">
+                @foreach (var member in members)
+                {
+                    <MudSelectItem Value="@((int?)member.Id)">@member.Name</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudNumericField T="int?" @bind-Value="borrowQuantity" Label="Quantity" Min="1" 
+                             Max="@(selectedBookId.HasValue ? books.FirstOrDefault(b => b.Id == selectedBookId)?.Quantity : null)"
+                             Required="true" 
+                             Placeholder="@(selectedBookId.HasValue ? $"Available: {books.FirstOrDefault(b => b.Id == selectedBookId)?.Quantity}" : "Enter quantity")"
+                             Class="mb-4" />
+
+            <div class="d-flex justify-end mt-6">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="Cancel" Class="mr-2">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="HandleAddBorrow" 
+                           Disabled="@(!success || borrowQuantity > (books.FirstOrDefault(b => b.Id == selectedBookId)?.Quantity ?? 0))">Borrow Book</MudButton>
+            </div>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    bool success;
+    MudForm form = default!;
+    Borrow newBorrow = new();
+    List<Book> books = new();
+    List<Member> members = new();
+    int? selectedBookId;
+    int? selectedMemberId;
+    int? borrowQuantity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        books = await BookServices.GetBooksWithAuthorsAsync();
+        members = await MemberServices.GetAllMembersAsync();
+    }
+
+    private async Task HandleAddBorrow()
+    {
+        await form.ValidateAsync();
+
+        if (form.IsValid)
+        {
+            try
+            {
+                newBorrow.BookId = selectedBookId ?? 0;
+                newBorrow.MemberId = selectedMemberId ?? 0;
+                newBorrow.Quantity = borrowQuantity ?? 0;
+                newBorrow.BorrowedAt = DateTimeOffset.Now;
+                newBorrow.DueDate = DateTimeOffset.Now.AddDays(14);
+                var selectedBook = books.FirstOrDefault(b => b.Id == newBorrow.BookId);
+                if (selectedBook != null)
+                {
+                    newBorrow.Title = selectedBook.Title;
+                    newBorrow.Author = selectedBook.Author?.Name ?? "Unknown";
+                }
+                await BorrowServices.CreateBorrowAsync(newBorrow);
+                Snackbar.Add("Book borrowed successfully!", Severity.Success);
+                NavManager.NavigateTo("/borrows");
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Error);
+            }
+        }
+    }
+
+    private void Cancel()
+    {
+        NavManager.NavigateTo("/borrows");
+    }
+}

@@ -1,0 +1,131 @@
+﻿@page "/profile"
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using System.Security.Claims
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IUserServices UserServices
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="4" Class="pa-8">
+        <div class="d-flex flex-column align-center mb-6">
+            <MudAvatar Color="Color.Primary" Style="height:100px; width:100px; font-size:2rem;">
+                @(user?.Username?.Substring(0, 1).ToUpper() ?? "U")
+            </MudAvatar>
+            <MudText Typo="Typo.h4" Class="mt-4">My Profile</MudText>
+            <MudChip T="string" Color="Color.Info" Variant="Variant.Text" Class="mt-2">@user?.Role</MudChip>
+        </div>
+
+        @if (loading)
+        {
+            <div class="d-flex justify-center pa-4">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+            </div>
+        }
+        else if (user != null)
+        {
+            <MudForm @ref="form" @bind-IsValid="@success">
+                <MudTextField T="string" Label="Username" Value="@user.Username" Disabled="true" HelperText="Username cannot be changed" Class="mb-4" />
+
+                <MudTextField T="string" Label="Email" Required="true" RequiredError="Email is required!"
+                              @bind-Value="user.Email" InputType="InputType.Email" Class="mb-4" />
+
+                <MudTextField T="string" Label="New Password (Leave blank to keep current)"
+                              @bind-Value="newPassword" InputType="InputType.Password" Class="mb-4" />
+
+                @if (!string.IsNullOrEmpty(newPassword))
+                {
+                    <MudTextField T="string" Label="Confirm New Password"
+                                  @bind-Value="confirmPassword" InputType="InputType.Password"
+                                  Validation="@(new Func<string, string>(PasswordMatch))"
+                                  Class="mb-4" />
+                }
+
+                <div class="d-flex justify-end mt-6">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                               OnClick="HandleUpdateProfile" Disabled="@(!success || updating)">
+                        @if (updating)
+                        {
+                            <MudProgressCircular Class="ms-n1" Size="Size.Small" Indeterminate="true" />
+                            <MudText Class="ms-2">Updating...</MudText>
+                        }
+                        else
+                        {
+                            <MudText>Update Profile</MudText>
+                        }
+                    </MudButton>
+                </div>
+            </MudForm>
+        }
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private User? user;
+    private bool loading = true;
+    private bool updating = false;
+    private bool success;
+    private MudForm form = default!;
+    private string newPassword = "";
+    private string confirmPassword = "";
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUserProfile();
+    }
+
+    private async Task LoadUserProfile()
+    {
+        loading = true;
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        var claimsUser = authState.User;
+
+        if (claimsUser.Identity?.IsAuthenticated == true)
+        {
+            var userIdClaim = claimsUser.FindFirst(ClaimTypes.NameIdentifier);
+            if (userIdClaim != null && int.TryParse(userIdClaim.Value, out var userId))
+            {
+                user = await UserServices.GetUserByIdAsync(userId);
+            }
+        }
+        loading = false;
+    }
+
+    private string PasswordMatch(string arg)
+    {
+        if (newPassword != confirmPassword)
+            return "Passwords do not match";
+        return null;
+    }
+
+    private async Task HandleUpdateProfile()
+    {
+        if (user == null) return;
+
+        await form.ValidateAsync();
+        if (!success) return;
+
+        updating = true;
+        try
+        {
+            if (!string.IsNullOrEmpty(newPassword))
+            {
+                user.Password = newPassword;
+            }
+
+            await UserServices.UpdateUserAsync(user);
+            Snackbar.Add("Profile updated successfully!", Severity.Success);
+            newPassword = "";
+            confirmPassword = "";
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error updating profile: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            updating = false;
+        }
+    }
+}

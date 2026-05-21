@@ -1,0 +1,76 @@
+﻿@page "/admin/users/add"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IUserServices UserServices        
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Small" Class="mt-16">
+    <MudPaper Elevation="4" Class="pa-8">
+        <div class="d-flex align-center mb-6">
+            <MudIconButton Icon="@Icons.Material.Filled.ArrowBack" Color="Color.Default" OnClick="Cancel" Class="mr-2" />
+            <MudText Typo="Typo.h4">Add New User</MudText>
+        </div>
+
+        <MudForm @ref="form" @bind-IsValid="@success">
+            <MudTextField T="string" Label="Username" Required="true" RequiredError="Username is required!"
+                          @bind-Value="newUser.Username" Class="mb-4" />
+
+            <MudTextField T="string" Label="Email" Required="true" RequiredError="Email is required!"
+                          @bind-Value="newUser.Email" InputType="InputType.Email" Class="mb-4" />
+
+            <MudTextField T="string" Label="Password" Required="true" RequiredError="Password is required!"
+                          @bind-Value="newUser.Password" InputType="InputType.Password" Class="mb-4" />
+
+            <MudSelect T="string" Label="Role" Required="true" @bind-Value="newUser.Role" Class="mb-4">
+                <MudSelectItem Value="@("Admin")">Admin</MudSelectItem>
+                <MudSelectItem Value="@("Member")">Member</MudSelectItem>
+            </MudSelect>
+
+            @if (newUser.Role == "Member")
+            {
+                <MudTextField T="string" Label="Course" Required="true" RequiredError="Course is required for Members!"
+                              @bind-Value="course" Class="mb-4" />
+            }
+
+            <div class="d-flex justify-end mt-6">
+                <MudButton Variant="Variant.Outlined" Color="Color.Default" OnClick="Cancel" Class="mr-2">Cancel</MudButton>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                           OnClick="HandleAddUser" Disabled="@(!success)">Save User</MudButton>
+            </div>
+        </MudForm>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    bool success;
+    MudForm form = default!;
+    User newUser = new();
+    string course = string.Empty;
+
+    private async Task HandleAddUser()
+    {
+        await form.ValidateAsync();
+
+        if (form.IsValid)
+        {
+            var result = await UserServices.RegisterAsync(newUser, course);
+            if (result)
+            {
+                Snackbar.Add("User created successfully!", Severity.Success);
+                NavManager.NavigateTo("/admin/users");
+            }
+            else
+            {
+                Snackbar.Add("Username already exists.", Severity.Error);
+            }
+        }
+    }
+
+    private void Cancel()
+    {
+        NavManager.NavigateTo("/admin/users");
+    }
+}

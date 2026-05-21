@@ -1,0 +1,295 @@
+@page "/my-borrows"
+@attribute [Authorize(Roles = "Member")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Implementations
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IBorrowServices BorrowServices
+@inject IBookServices BookServices
+@inject AuthenticationStateProvider AuthStateProvider
+@inject ISnackbar Snackbar
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <MudText Typo="Typo.h4" GutterBottom="true">My Borrowed Books</MudText>
+
+    <MudTable Items="@myBorrows" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Loading="@loading" Filter="new Func<Borrow, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">My Borrows</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Placeholder="Search Book Title or Author" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Book Title</MudTh>
+            <MudTh>Author</MudTh>
+            <MudTh>Borrowed At</MudTh>
+            <MudTh>Due Date</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Book Title">@GetBookTitle(context.BookId)</MudTd>
+            <MudTd DataLabel="Author">@GetBookAuthor(context.BookId)</MudTd>
+            <MudTd DataLabel="Borrowed At">@context.BorrowedAt.ToString("g")</MudTd>
+            <MudTd DataLabel="Due Date">
+                <MudText Color="@(context.DueDate < DateTimeOffset.Now && !context.IsReturned ? Color.Error : Color.Default)">
+                    @context.DueDate?.ToString("d")
+                </MudText>
+            </MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.IsReturned)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Returned</MudChip>
+                }
+                else if (context.ReturnedQuantity > 0)
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Partial (@context.ReturnedQuantity/@context.Quantity Returned)</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small">Borrowed (0/@context.Quantity Returned)</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                @if (!context.IsReturned)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.AssignmentReturn" Color="Color.Success" OnClick="@(() => OpenReturnDialog(context))" Title="Return Book" />
+                }
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteBorrow(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>You haven't borrowed any books yet.</MudText>
+        </NoRecordsContent>
+        <LoadingContent>
+            <MudText>Loading your borrows...</MudText>
+        </LoadingContent>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isReturnDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Return Book</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Returning copies of <b>@returningBorrow.Title</b></MudText>
+        <MudText Typo="Typo.body2" Class="mb-4">
+            Borrowed: @returningBorrow.Quantity |
+            Already Returned: @returningBorrow.ReturnedQuantity |
+            <strong>Remaining: @(returningBorrow.Quantity - returningBorrow.ReturnedQuantity)</strong>
+        </MudText>
+
+        <MudNumericField @bind-Value="returnQuantity"
+                         Label="Quantity to Return"
+                         Min="1"
+                         Max="@maxReturnable"
+                         Required="true"
+                         Variant="Variant.Outlined"
+                         Margin="Margin.Dense"
+                         Immediate="true"
+                         OnKeyUp="@(async () => await ValidateReturnQuantity())"
+                         OnBlur="@(async () => await ValidateReturnQuantity())" />
+
+        @if (!isReturnQuantityValid)
+        {
+            <MudAlert Severity="Severity.Error" Class="mt-3">
+                <MudText>@returnQuantityError</MudText>
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelReturn">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleReturn" Disabled="@(!isReturnQuantityValid || isProcessing)">Confirm Return</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Borrow> myBorrows = new();
+    private List<Book> allBooks = new();
+    private bool loading = true;
+    private string searchString = "";
+
+    // Return logic
+    bool isReturnDialogVisible = false;
+    Borrow returningBorrow = new();
+    int returnQuantity = 0;
+    int maxReturnable => returningBorrow.Quantity - returningBorrow.ReturnedQuantity;
+    bool isReturnQuantityValid = false;
+    string returnQuantityError = string.Empty;
+    bool isProcessing = false;
+    DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadBorrows();
+    }
+
+    private async Task LoadBorrows()
+    {
+        try
+        {
+            loading = true;
+            var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+
+            if (user.Identity != null && user.Identity.IsAuthenticated && !string.IsNullOrEmpty(user.Identity.Name))
+            {
+                var username = user.Identity.Name;
+                allBooks = await BookServices.GetBooksWithAuthorsAsync();
+                myBorrows = await BorrowServices.GetBorrowsByMemberNameAsync(username);
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading borrows: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            loading = false;
+            StateHasChanged();
+        }
+    }
+
+    private bool FilterFunc(Borrow borrow)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+
+        var bookTitle = GetBookTitle(borrow.BookId);
+        var bookAuthor = GetBookAuthor(borrow.BookId);
+
+        if (bookTitle.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (bookAuthor.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private void OpenReturnDialog(Borrow borrow)
+    {
+        returningBorrow = borrow;
+        returnQuantity = 1;
+        isReturnQuantityValid = true;
+        returnQuantityError = string.Empty;
+        isReturnDialogVisible = true;
+        StateHasChanged();
+    }
+
+    private void CancelReturn()
+    {
+        isReturnDialogVisible = false;
+        returnQuantityError = string.Empty;
+        isReturnQuantityValid = false;
+        isProcessing = false;
+    }
+
+    private async Task ValidateReturnQuantity()
+    {
+        var maxReturn = maxReturnable;
+
+        if (returnQuantity <= 0)
+        {
+            isReturnQuantityValid = false;
+            returnQuantityError = "Quantity must be greater than 0";
+        }
+        else if (returnQuantity > maxReturn)
+        {
+            isReturnQuantityValid = false;
+            returnQuantityError = $"Cannot return more than {maxReturn} book(s). You borrowed {returningBorrow.Quantity} and already returned {returningBorrow.ReturnedQuantity}.";
+        }
+        else
+        {
+            isReturnQuantityValid = true;
+            returnQuantityError = string.Empty;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleReturn()
+    {
+        if (isProcessing) return;
+
+        var maxAllowed = maxReturnable;
+
+        if (returnQuantity <= 0)
+        {
+            Snackbar.Add("Please enter a valid quantity to return.", Severity.Warning);
+            return;
+        }
+
+        if (returnQuantity > maxAllowed)
+        {
+            Snackbar.Add($"Cannot return more than {maxAllowed} book(s). You borrowed {returningBorrow.Quantity} and already returned {returningBorrow.ReturnedQuantity}.", Severity.Error);
+            return;
+        }
+
+        try
+        {
+            isProcessing = true;
+            StateHasChanged();
+
+            // Get the book title BEFORE returning (from allBooks list)
+            var bookTitle = GetBookTitle(returningBorrow.BookId);
+
+            await BorrowServices.ReturnBorrowAsync(returningBorrow.Id, returnQuantity);
+
+            // Display success message with book title and quantity
+            if (returnQuantity == 1)
+            {
+                Snackbar.Add($"Successfully returned '{bookTitle}'", Severity.Success);
+            }
+            else
+            {
+                Snackbar.Add($"Successfully returned {returnQuantity} copies of '{bookTitle}'", Severity.Success);
+            }
+
+            isReturnDialogVisible = false;
+            await LoadBorrows();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"❌ Return failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            isProcessing = false;
+            StateHasChanged();
+        }
+    }
+
+    private async Task DeleteBorrow(int id)
+    {
+        try
+        {
+            // Find the borrow to get the bookId
+            var borrowToDelete = myBorrows.FirstOrDefault(b => b.Id == id);
+            if (borrowToDelete != null)
+            {
+                // Get the book title from allBooks list
+                var bookTitle = GetBookTitle(borrowToDelete.BookId);
+
+                await BorrowServices.DeleteBorrowAsync(id);
+                Snackbar.Add($"Successfully cancelled borrowing '{bookTitle}'", Severity.Info);
+                await LoadBorrows();
+            }
+            else
+            {
+                await BorrowServices.DeleteBorrowAsync(id);
+                Snackbar.Add($"Borrow cancelled successfully!", Severity.Info);
+                await LoadBorrows();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Delete failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private string GetBookTitle(int bookId) => allBooks.FirstOrDefault(b => b.Id == bookId)?.Title ?? "Unknown";
+    private string GetBookAuthor(int bookId) => allBooks.FirstOrDefault(b => b.Id == bookId)?.Author?.Name ?? "Unknown";
+}

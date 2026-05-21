@@ -1,0 +1,316 @@
+@page "/borrows"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IBorrowServices BorrowServices
+@inject IBookServices BookServices
+@inject IMemberServices MemberServices
+@inject ISnackbar Snackbar
+@inject NavigationManager NavManager
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <div class="d-flex align-center justify-space-between mb-8">
+        <MudText Typo="Typo.h4">Manage Borrows</MudText>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => NavManager.NavigateTo("/borrows/add"))">Borrow Book</MudButton>
+    </div>
+
+    <MudTable Items="@borrows" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Filter="new Func<Borrow, bool>(FilterFunc)">
+        <ToolBarContent>
+            <MudText Typo="Typo.h6">Borrows List</MudText>
+            <MudSpacer />
+            <MudTextField @bind-Value="searchString" Placeholder="Search Book or Member" Adornment="Adornment.Start"
+                          AdornmentIcon="@Icons.Material.Filled.Search" IconSize="Size.Medium" Class="mt-0"></MudTextField>
+        </ToolBarContent>
+        <HeaderContent>
+            <MudTh>Book</MudTh>
+            <MudTh>Member</MudTh>
+            <MudTh>Borrowed At</MudTh>
+            <MudTh>Due Date</MudTh>
+            <MudTh>Returned At</MudTh>
+            <MudTh>Status</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd DataLabel="Book">@context.Title</MudTd>
+            <MudTd DataLabel="Member">@GetMemberName(context.MemberId)</MudTd>
+            <MudTd DataLabel="Borrowed At">@context.BorrowedAt.ToString("g")</MudTd>
+            <MudTd DataLabel="Due Date">@context.DueDate?.ToString("d")</MudTd>
+            <MudTd DataLabel="Returned At">@context.ReturnedAt?.ToString("g")</MudTd>
+            <MudTd DataLabel="Status">
+                @if (context.IsReturned)
+                {
+                    <MudChip T="string" Color="Color.Success" Size="Size.Small">Returned</MudChip>
+                }
+                else if (context.ReturnedQuantity > 0)
+                {
+                    <MudChip T="string" Color="Color.Warning" Size="Size.Small">Partial</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Color="Color.Error" Size="Size.Small">Borrowed</MudChip>
+                }
+            </MudTd>
+            <MudTd DataLabel="Actions" Style="text-align:right">
+                @if (!context.IsReturned)
+                {
+                    <MudIconButton Icon="@Icons.Material.Filled.AssignmentReturn" Color="Color.Success" OnClick="@(() => OpenReturnDialog(context))" Title="Return Book" />
+                }
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info" OnClick="@(() => EditBorrow(context))" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error" OnClick="@(() => DeleteBorrow(context.Id))" />
+            </MudTd>
+        </RowTemplate>
+        <PagerContent>
+            <MudTablePager />
+        </PagerContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isEditDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Edit Borrow Record</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudForm @ref="editForm" @bind-IsValid="@isEditFormValid">
+            <MudSelect T="int?" Label="Select Book" Required="true" @bind-Value="editingBookId" Placeholder="Choose a book">
+                @foreach (var book in books)
+                {
+                    <MudSelectItem Value="@((int?)book.Id)">@book.Title</MudSelectItem>
+                }
+            </MudSelect>
+            <MudSelect T="int?" Label="Select Member" Required="true" @bind-Value="editingMemberId" Placeholder="Choose a member" Class="mt-4">
+                @foreach (var member in members)
+                {
+                    <MudSelectItem Value="@((int?)member.Id)">@member.Name</MudSelectItem>
+                }
+            </MudSelect>
+            <MudNumericField T="int?" @bind-Value="editingQuantity" Label="Quantity" Min="1" 
+                             Max="@(editingBookId.HasValue ? (books.FirstOrDefault(b => b.Id == editingBookId)?.Quantity + borrows.FirstOrDefault(br => br.Id == editingBorrow.Id)?.Quantity) : null)"
+                             Required="true" Placeholder="Enter quantity" Class="mt-4" />
+            <MudGrid Class="mt-4">
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Borrowed At (Date)" @bind-Date="borrowedAtDate" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTimePicker Label="Borrowed At (Time)" @bind-Time="borrowedAtTime" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Due Date" @bind-Date="dueDate" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudDatePicker Label="Returned At (Date)" @bind-Date="returnedAtDate" />
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudTimePicker Label="Returned At (Time)" @bind-Time="returnedAtTime" />
+                </MudItem>
+            </MudGrid>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelEdit">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="UpdateBorrow" Disabled="@(!isEditFormValid)">Update</MudButton>
+    </DialogActions>
+</MudDialog>
+
+<MudDialog @bind-Visible="isReturnDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">Return Book</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText>Returning copies of <b>@returningBorrow.Title</b></MudText>
+        <MudText Typo="Typo.body2" Class="mb-4">Borrowed: @returningBorrow.Quantity, Already Returned: @returningBorrow.ReturnedQuantity</MudText>
+        <MudNumericField T="int?" @bind-Value="returnQuantity" Label="Quantity to Return" Min="1" Max="@(returningBorrow.Quantity - returningBorrow.ReturnedQuantity)" Required="true" Placeholder="Enter quantity" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelReturn">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="HandleReturn">Confirm Return</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    List<Borrow> borrows = new();
+    List<Book> books = new();
+    List<Member> members = new();
+    string searchString = "";
+
+    // Edit logic
+    bool isEditDialogVisible;
+    bool isEditFormValid;
+    MudForm editForm = default!;
+    Borrow editingBorrow = new();
+    int? editingBookId;
+    int? editingMemberId;
+    int? editingQuantity;
+    
+    DateTime? borrowedAtDate;
+    TimeSpan? borrowedAtTime;
+    DateTime? dueDate;
+    DateTime? returnedAtDate;
+    TimeSpan? returnedAtTime;
+
+    DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Medium, FullWidth = true };
+
+    // Return logic
+    bool isReturnDialogVisible;
+    Borrow returningBorrow = new();
+    int? returnQuantity;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+    }
+
+    private async Task LoadData()
+    {
+        borrows = await BorrowServices.GetBorrowsAsync();
+        books = await BookServices.GetBooksAsync();
+        members = await MemberServices.GetAllMembersAsync();
+    }
+
+    private bool FilterFunc(Borrow borrow)
+    {
+        if (string.IsNullOrWhiteSpace(searchString))
+            return true;
+
+        var bookTitle = borrow.Title;
+        var memberName = GetMemberName(borrow.MemberId);
+
+        if (bookTitle.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        if (memberName.Contains(searchString, StringComparison.OrdinalIgnoreCase))
+            return true;
+        return false;
+    }
+
+    private void EditBorrow(Borrow borrow)
+    {
+        editingBorrow = new Borrow
+        {
+            Id = borrow.Id,
+            BookId = borrow.BookId,
+            MemberId = borrow.MemberId,
+            BorrowedAt = borrow.BorrowedAt,
+            DueDate = borrow.DueDate,
+            ReturnedAt = borrow.ReturnedAt,
+            Title = borrow.Title,
+            Author = borrow.Author,
+            Quantity = borrow.Quantity,
+            ReturnedQuantity = borrow.ReturnedQuantity,
+            IsReturned = borrow.IsReturned
+        };
+        editingBookId = borrow.BookId;
+        editingMemberId = borrow.MemberId;
+        editingQuantity = borrow.Quantity;
+
+        borrowedAtDate = editingBorrow.BorrowedAt.Date;
+        borrowedAtTime = editingBorrow.BorrowedAt.TimeOfDay;
+        dueDate = editingBorrow.DueDate?.Date;
+        returnedAtDate = editingBorrow.ReturnedAt?.Date;
+        returnedAtTime = editingBorrow.ReturnedAt?.TimeOfDay;
+
+        isEditDialogVisible = true;
+    }
+
+    private void CancelEdit()
+    {
+        isEditDialogVisible = false;
+    }
+
+    private void OpenReturnDialog(Borrow borrow)
+    {
+        returningBorrow = borrow;
+        returnQuantity = null;
+        isReturnDialogVisible = true;
+    }
+
+    private void CancelReturn()
+    {
+        isReturnDialogVisible = false;
+    }
+
+    private async Task HandleReturn()
+    {
+        if (returnQuantity == null || returnQuantity <= 0)
+        {
+            Snackbar.Add("Please enter a valid quantity.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            await BorrowServices.ReturnBorrowAsync(returningBorrow.Id, returnQuantity.Value);
+            Snackbar.Add($"Successfully returned {returnQuantity} copy(s) of {returningBorrow.Title}", Severity.Success);
+            isReturnDialogVisible = false;
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task UpdateBorrow()
+    {
+        await editForm.ValidateAsync();
+        if (isEditFormValid)
+        {
+            if (borrowedAtDate.HasValue)
+            {
+                var time = borrowedAtTime ?? TimeSpan.Zero;
+                editingBorrow.BorrowedAt = new DateTimeOffset(borrowedAtDate.Value.Year, borrowedAtDate.Value.Month, borrowedAtDate.Value.Day, time.Hours, time.Minutes, time.Seconds, DateTimeOffset.Now.Offset);
+            }
+
+            if (dueDate.HasValue)
+            {
+                editingBorrow.DueDate = new DateTimeOffset(dueDate.Value.Date, DateTimeOffset.Now.Offset);
+            }
+            else
+            {
+                editingBorrow.DueDate = null;
+            }
+
+            if (returnedAtDate.HasValue)
+            {
+                var time = returnedAtTime ?? TimeSpan.Zero;
+                editingBorrow.ReturnedAt = new DateTimeOffset(returnedAtDate.Value.Year, returnedAtDate.Value.Month, returnedAtDate.Value.Day, time.Hours, time.Minutes, time.Seconds, DateTimeOffset.Now.Offset);
+            }
+            else
+            {
+                editingBorrow.ReturnedAt = null;
+            }
+
+            if (editingBorrow.ReturnedAt.HasValue && editingBorrow.ReturnedAt < editingBorrow.BorrowedAt)
+            {
+                Snackbar.Add("Return date cannot be earlier than borrow date.", Severity.Error);
+                return;
+            }
+
+            editingBorrow.BookId = editingBookId ?? 0;
+            editingBorrow.MemberId = editingMemberId ?? 0;
+            editingBorrow.Quantity = editingQuantity ?? 0;
+
+            var selectedBook = books.FirstOrDefault(b => b.Id == editingBorrow.BookId);
+            if (selectedBook != null)
+            {
+                editingBorrow.Title = selectedBook.Title;
+                editingBorrow.Author = selectedBook.Author?.Name ?? "Unknown";
+            }
+
+            await BorrowServices.UpdateBorrowAsync(editingBorrow);
+            Snackbar.Add("Borrow record updated successfully!", Severity.Success);
+            isEditDialogVisible = false;
+            await LoadData();
+        }
+    }
+
+    private async Task DeleteBorrow(int id)
+    {
+        await BorrowServices.DeleteBorrowAsync(id);
+        Snackbar.Add("Borrow record deleted successfully!", Severity.Info);
+        await LoadData();
+    }
+
+    private string GetBookTitle(int bookId) => books.FirstOrDefault(b => b.Id == bookId)?.Title ?? "Unknown";
+    private string GetMemberName(int memberId) => members.FirstOrDefault(m => m.Id == memberId)?.Name ?? "Unknown";
+}

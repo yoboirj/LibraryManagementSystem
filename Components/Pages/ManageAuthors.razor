@@ -1,0 +1,177 @@
+@page "/admin/authors"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@using MudBlazor
+@inject IAuthorServices AuthorServices
+@inject ISnackbar Snackbar
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <MudText Typo="Typo.h4" GutterBottom="true">Manage Authors</MudText>
+
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => OpenAuthorDialog(null))"
+               Class="mb-4">
+        Add New Author
+    </MudButton>
+
+    <MudTable Items="@authors" Hover="true" Breakpoint="Breakpoint.Sm" Elevation="4" Loading="@loading">
+        <HeaderContent>
+            <MudTh>Author Name</MudTh>
+            <MudTh>Nationality</MudTh>
+            <MudTh>Books Count</MudTh>
+            <MudTh Style="text-align:right">Actions</MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd>@context.Name</MudTd>
+            <MudTd>@(string.IsNullOrEmpty(context.Nationality) ? "Not specified" : context.Nationality)</MudTd>
+            <MudTd>@context.Books.Count</MudTd>
+            <MudTd Style="text-align:right">
+                <MudIconButton Icon="@Icons.Material.Filled.Edit" Color="Color.Info"
+                               OnClick="@(() => OpenAuthorDialog(context))" Title="Edit Author" />
+                <MudIconButton Icon="@Icons.Material.Filled.Delete" Color="Color.Error"
+                               OnClick="@(() => DeleteAuthor(context))" Title="Delete Author" />
+            </MudTd>
+        </RowTemplate>
+        <NoRecordsContent>
+            <MudText>No authors found.</MudText>
+        </NoRecordsContent>
+    </MudTable>
+</MudContainer>
+
+<MudDialog @bind-Visible="isAuthorDialogVisible" Options="dialogOptions">
+    <TitleContent>
+        <MudText Typo="Typo.h6">@(isEditing ? "Edit Author" : "Add New Author")</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField @bind-Value="currentAuthor.Name"
+                      Label="Author Name"
+                      Required="true"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense" />
+
+        <MudTextField @bind-Value="currentAuthor.Nationality"
+                      Label="Nationality"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense" />
+
+        <MudTextField @bind-Value="currentAuthor.Biography"
+                      Label="Biography"
+                      Variant="Variant.Outlined"
+                      Margin="Margin.Dense"
+                      Lines="3" />
+
+        <MudDatePicker @bind-Date="currentAuthor.BirthDate"
+                       Label="Birth Date"
+                       Variant="Variant.Outlined"
+                       Margin="Margin.Dense" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton Variant="Variant.Filled" Color="Color.Default" OnClick="CancelAuthorDialog">Cancel</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveAuthor">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private List<Author> authors = new();
+    private bool loading = true;
+    private bool isAuthorDialogVisible = false;
+    private bool isEditing = false;
+    private Author currentAuthor = new();
+    private DialogOptions dialogOptions = new() { MaxWidth = MaxWidth.Small, FullWidth = true };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuthors();
+    }
+
+    private async Task LoadAuthors()
+    {
+        loading = true;
+        authors = await AuthorServices.GetAuthorsAsync();
+        loading = false;
+        StateHasChanged();
+    }
+
+    private void OpenAuthorDialog(Author? author)
+    {
+        if (author == null)
+        {
+            isEditing = false;
+            currentAuthor = new Author();
+        }
+        else
+        {
+            isEditing = true;
+            currentAuthor = new Author
+            {
+                Id = author.Id,
+                Name = author.Name,
+                Nationality = author.Nationality,
+                Biography = author.Biography,
+                BirthDate = author.BirthDate
+            };
+        }
+        isAuthorDialogVisible = true;
+    }
+
+    private void CancelAuthorDialog()
+    {
+        isAuthorDialogVisible = false;
+        currentAuthor = new Author();
+    }
+
+    private async Task SaveAuthor()
+    {
+        if (string.IsNullOrWhiteSpace(currentAuthor.Name))
+        {
+            Snackbar.Add("Author name is required.", Severity.Warning);
+            return;
+        }
+
+        try
+        {
+            if (isEditing)
+            {
+                await AuthorServices.UpdateAuthorAsync(currentAuthor);
+                Snackbar.Add($"Author '{currentAuthor.Name}' updated successfully!", Severity.Success);
+            }
+            else
+            {
+                await AuthorServices.CreateAuthorAsync(currentAuthor);
+                Snackbar.Add($"Author '{currentAuthor.Name}' created successfully!", Severity.Success);
+            }
+
+            isAuthorDialogVisible = false;
+            await LoadAuthors();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add(ex.Message, Severity.Error);
+        }
+    }
+
+    private async Task DeleteAuthor(Author author)
+    {
+        // Using JS for confirmation as a fallback for ShowMessageBox issues
+        bool confirmed = await JS.InvokeAsync<bool>("confirm", $"Are you sure you want to delete author '{author.Name}'? This will only work if they have no books.");
+
+        if (confirmed)
+        {
+            try
+            {
+                await AuthorServices.DeleteAuthorAsync(author.Id);
+                Snackbar.Add($"Author '{author.Name}' deleted successfully!", Severity.Success);
+                await LoadAuthors();
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add(ex.Message, Severity.Error);
+            }
+        }
+    }
+}

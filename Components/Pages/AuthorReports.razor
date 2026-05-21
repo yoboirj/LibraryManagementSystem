@@ -1,0 +1,115 @@
+@page "/reports/authors"
+@attribute [Authorize(Roles = "Admin")]
+@using LibraryManagementSystem.Features.Data.Models
+@using LibraryManagementSystem.Features.Services.Intefaces
+@using Microsoft.AspNetCore.Authorization
+@inject IAuthorServices AuthorServices
+@inject IBookServices BookServices
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="mt-16">
+    <MudText Typo="Typo.h4" GutterBottom="true">Author Reports</MudText>
+    <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-8">View statistics and books by author</MudText>
+
+    <MudGrid>
+        <!-- Author Statistics Card -->
+        <MudItem xs="12" md="4">
+            <MudPaper Elevation="4" Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Author Statistics</MudText>
+                @if (authorStats == null)
+                {
+                    <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                }
+                else
+                {
+                    <MudTable Items="@authorStats.Select(kv => new { Author = kv.Key, BookCount = kv.Value })" Dense="true" Hover="true">
+                        <HeaderContent>
+                            <MudTh>Author</MudTh>
+                            <MudTh>Books</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Author</MudTd>
+                            <MudTd>@context.BookCount</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <!-- Books by Selected Author -->
+        <MudItem xs="12" md="8">
+            <MudPaper Elevation="4" Class="pa-4">
+                <MudText Typo="Typo.h6" Class="mb-4">Books by Author</MudText>
+                <MudSelect T="int" Label="Select Author" Value="selectedAuthorId"
+                           ValueChanged="@(async (int val) => { selectedAuthorId = val; await LoadBooksByAuthor(); })"
+                           Variant="Variant.Outlined" Margin="Margin.Dense" FullWidth="true">
+                    @foreach (var author in authors)
+                    {
+                        <MudSelectItem Value="@author.Id">@author.Name (@author.Books.Count books)</MudSelectItem>
+                    }
+                </MudSelect>
+
+                @if (selectedAuthorId > 0 && booksByAuthor != null)
+                {
+                    <MudTable Items="@booksByAuthor" Dense="true" Hover="true" Class="mt-4">
+                        <HeaderContent>
+                            <MudTh>Title</MudTh>
+                            <MudTh>Genre</MudTh>
+                            <MudTh>Quantity</MudTh>
+                            <MudTh>Year</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Title</MudTd>
+                            <MudTd>@(string.IsNullOrEmpty(context.Genre) ? "Not specified" : context.Genre)</MudTd>
+                            <MudTd>@context.Quantity</MudTd>
+                            <MudTd>@(context.PublicationYear?.ToString() ?? "Unknown")</MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText>No books found for this author.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private List<Author> authors = new();
+    private Dictionary<string, int>? authorStats;
+    private int selectedAuthorId = 0;
+    private List<Book>? booksByAuthor;
+    private Author? selectedAuthor;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAuthors();
+        await LoadAuthorStats();
+    }
+
+    private async Task LoadAuthors()
+    {
+        authors = await AuthorServices.GetAuthorsAsync();
+        if (authors.Any())
+        {
+            selectedAuthorId = authors.First().Id;
+            await LoadBooksByAuthor();
+        }
+        StateHasChanged();
+    }
+
+    private async Task LoadAuthorStats()
+    {
+        authorStats = await AuthorServices.GetAuthorStatisticsAsync();
+        StateHasChanged();
+    }
+
+    private async Task LoadBooksByAuthor()
+    {
+        if (selectedAuthorId > 0)
+        {
+            selectedAuthor = authors.FirstOrDefault(a => a.Id == selectedAuthorId);
+            booksByAuthor = await AuthorServices.GetBooksByAuthorAsync(selectedAuthorId);
+            StateHasChanged();
+        }
+    }
+}
